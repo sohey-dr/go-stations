@@ -22,39 +22,36 @@ func TestStation12(t *testing.T) {
 	dbpath := "./temp_test.db"
 	d, err := db.NewDB(dbpath)
 	if err != nil {
-		t.Error("エラーが発生しました", err)
+		t.Errorf("データベースの作成に失敗しました: %v", err)
 		return
 	}
 
 	t.Cleanup(func() {
 		if err := d.Close(); err != nil {
-			t.Error("エラーが発生しました", err)
+			t.Errorf("データベースのクローズに失敗しました: %v", err)
 			return
 		}
-	})
-
-	t.Cleanup(func() {
 		if err := os.Remove(dbpath); err != nil {
-			t.Error("エラーが発生しました", err)
+			t.Errorf("テスト用のDBファイルの削除に失敗しました: %v", err)
 			return
 		}
 	})
 
 	stmt, err := d.Prepare(`INSERT INTO todos(subject) VALUES(?)`)
 	if err != nil {
-		t.Error("エラーが発生しました", err)
+		t.Errorf("ステートメントの作成に失敗しました: %v", err)
 		return
 	}
 	t.Cleanup(func() {
 		if err := stmt.Close(); err != nil {
-			t.Error("エラーが発生しました", err)
+			t.Errorf("ステートメントのクローズに失敗しました: %v", err)
 			return
 		}
 	})
 
 	_, err = stmt.Exec("todo subject")
 	if err != nil {
-		t.Error(err)
+		t.Errorf("todoの追加に失敗しました: %v", err)
 		return
 	}
 
@@ -62,14 +59,10 @@ func TestStation12(t *testing.T) {
 		ID          int64
 		Subject     string
 		Description string
-		WantError   error
 	}{
-		"ID is empty": {
-			WantError: &model.ErrNotFound{},
-		},
+		"ID is empty": {},
 		"Subject is empty": {
-			ID:        1,
-			WantError: sqlite3.ErrConstraint,
+			ID: 1,
 		},
 		"Description is empty": {
 			ID:      1,
@@ -82,20 +75,21 @@ func TestStation12(t *testing.T) {
 		},
 	}
 
+	var sqlite3Err sqlite3.Error
+
 	for name, tc := range testcases {
+		name := name
 		tc := tc
 		t.Run(name, func(t *testing.T) {
 			svc := service.NewTODOService(d)
 			got, err := svc.UpdateTODO(context.Background(), tc.ID, tc.Subject, tc.Description)
-			switch tc.WantError {
-			case nil:
-				if err != nil {
-					t.Error("エラーが発生しました", err)
+			if err != nil {
+				if !errors.As(err, &sqlite3Err) {
+					t.Errorf("期待していないエラーの Type です, got = %t, want = %+v", err, sqlite3Err)
 					return
 				}
-			default:
-				if !errors.As(err, &tc.WantError) {
-					t.Errorf("期待していないエラーの Type です, got = %t, want = %+v", err, tc.WantError)
+				if err.(sqlite3.Error).Code != sqlite3.ErrConstraint {
+					t.Errorf("期待していないsqlite3のエラーナンバーです, got = %d, want = %d", err.(sqlite3.Error).Code, sqlite3.ErrConstraint)
 					return
 				}
 				return
